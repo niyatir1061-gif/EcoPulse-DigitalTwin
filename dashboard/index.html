@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EcoPulse — Industrial AI Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Chart.js CDN (single dependency, UI-only, no backend) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ============================================================
+       TOPBAR
+       ============================================================ -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-icon">EP</div>
+      <div>
+        <div class="brand-name">EcoPulse</div>
+        <div class="brand-sub">Industrial AI · Predictive Maintenance</div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <span class="sim-badge" style="background:#0284c7;color:#fff">Live Telemetry Feed</span>
+      <span class="live-indicator">Live</span>
+      <span class="time-display" id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       SIDEBAR
+       ============================================================ -->
+  <aside class="sidebar">
+
+    <!-- Navigation -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Navigation</div>
+
+      <button class="nav-item active" data-page="live">
+        <span class="nav-icon"></span>
+        Live Asset Twin
+      </button>
+
+      <button class="nav-item" data-page="fleet">
+        <span class="nav-icon"></span>
+        Fleet &amp; Action Queue
+      </button>
+
+      <button class="nav-item" data-page="audit">
+        <span class="nav-icon"></span>
+        Audit Exporter
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Demo controls -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Demo Controls</div>
+
+      <button class="btn-inject" id="btn-inject">Inject Bearing Fault</button>
+      <button class="btn-reset"  id="btn-reset">Reset Demo</button>
+
+      <div class="fault-progress-wrap" id="fault-progress-wrap">
+        <div class="fault-label">
+          <span>Fault Progress</span>
+          <span id="fault-pct-label">0%</span>
+        </div>
+        <div class="fault-bar-bg">
+          <div class="fault-bar-fill" id="fault-bar-fill" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Asset selector -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Asset</div>
+      <div class="sidebar-control">
+        <label>Target Motor</label>
+        <select id="motor-select">
+          <option value="motor1">Induction Motor 1 · 15 kW</option>
+          <option value="motor2">Compressor Line 2 · 30 kW</option>
+          <option value="motor3">HVAC Pump 3 · 7.5 kW</option>
+        </select>
+      </div>
+      <div class="sidebar-control">
+        <label>Observation Window <span class="range-val" id="ctrl-samples-val">120s</span></label>
+        <input type="range" id="ctrl-samples" min="60" max="300" step="10" value="120" />
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Energy settings -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Energy Settings</div>
+
+      <div class="sidebar-control">
+        <label>Production Rate (units/hr)</label>
+        <input type="number" id="ctrl-production" value="120" min="10" step="10" />
+      </div>
+
+      <div class="sidebar-control">
+        <label>Solar PV (kW)</label>
+        <input type="number" id="ctrl-solar" value="8.5" min="0" step="0.5" />
+      </div>
+
+      <div class="sidebar-control">
+        <label>Grid Tariff (₹/kWh)</label>
+        <input type="number" id="ctrl-grid" value="8.50" min="1" step="0.5" />
+      </div>
+
+      <div class="sidebar-control">
+        <label>Downtime Cost (₹/hr)</label>
+        <input type="number" id="ctrl-downtime" value="12000" min="1000" step="1000" />
+      </div>
+
+      <div class="sidebar-control">
+        <label>Hardware Cost (₹)</label>
+        <input type="number" id="ctrl-hardware" value="25000" min="5000" step="5000" />
+      </div>
+
+      <div class="sidebar-control">
+        <label>CO₂ Factor (kg/kWh)</label>
+        <input type="number" id="ctrl-co2" value="0.82" min="0.1" step="0.05" />
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Stream settings -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Refresh</div>
+      <div class="sidebar-control">
+        <label>Interval <span class="range-val" id="ctrl-refresh-val">2s</span></label>
+        <input type="range" id="ctrl-refresh" min="1" max="5" step="1" value="2" />
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Schneider credit -->
+    <div class="sidebar-section" style="margin-top:auto">
+      <div style="font-size:.72rem;color:var(--text3);line-height:1.6;padding:0 4px">
+        Schneider Electric<br>Yuva Yodha · Smart Manufacturing<br>
+        <span style="color:var(--border2)">Physics-inspired simulator</span>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ============================================================
+       MAIN CONTENT
+       ============================================================ -->
+  <main class="main-content">
+
+    <!-- ============================================================
+         PAGE 1 — LIVE ASSET TWIN
+         ============================================================ -->
+    <div class="page active" id="page-live">
+
+      <div class="page-header">
+        <div class="page-title">Live Asset Twin</div>
+        <div class="page-sub">Real-time sensor telemetry · Health scoring · Fault detection</div>
+      </div>
+
+      <!-- Methodology expander -->
+      <div class="expander">
+        <button class="expander-toggle">
+          Methodology &amp; Standards
+          <span class="expander-arrow"></span>
+        </button>
+        <div class="expander-body">
+          <p>All sensor readings are generated by a <strong>physics-inspired simulator</strong> — no real plant data is used.</p>
+          <ul style="margin:8px 0 10px 16px;line-height:1.9">
+            <li>Shift load profile drives <strong>current draw</strong></li>
+            <li>Temperature follows current via <strong>first-order thermal lag</strong> (τ = 18 s)</li>
+            <li>Vibration is load-dependent; fault injection adds a super-linear ramp</li>
+          </ul>
+          <table class="std-table">
+            <thead><tr><th>Standard</th><th>Applied to</th></tr></thead>
+            <tbody>
+              <tr><td>ISO 10816-3</td><td>Vibration zone classification (A / B / C / D)</td></tr>
+              <tr><td>IS 12615</td><td>Motor efficiency thresholds (IE2 / IE3)</td></tr>
+              <tr><td>IEC 60034-30-1</td><td>Efficiency class definitions</td></tr>
+              <tr><td>BEE Guidance Notes</td><td>Energy-audit report structure</td></tr>
+            </tbody>
+          </table>
+          <p style="margin-top:8px">Motor ratings: <strong>7.5 kW, 15 kW, 30 kW</strong> · 415 V three-phase. Efficiency class labels are <em>illustrative</em> — not official BEE star ratings.</p>
+        </div>
+      </div>
+
+      <!-- KPI cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card green" id="kpi-fleet-health">
+          <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+          <div class="kpi-label">Fleet Health</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta">Loading…</div>
+        </div>
+        <div class="kpi-card amber" id="kpi-alerts">
+          <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+          <div class="kpi-label">Active Alerts</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta">Loading…</div>
+        </div>
+        <div class="kpi-card red" id="kpi-risk">
+          <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></div>
+          <div class="kpi-label">₹ at Risk</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta">Downtime exposure (8 h)</div>
+        </div>
+        <div class="kpi-card blue" id="kpi-kwh">
+          <div class="kpi-icon"></div>
+          <div class="kpi-label">kWh Saved vs Baseline</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Metrics strip -->
+      <div class="metrics-strip">
+        <div class="metric-chip">
+          <div class="metric-chip-label">Active Power</div>
+          <div class="metric-chip-val" id="chip-power">—</div>
+        </div>
+        <div class="metric-chip">
+          <div class="metric-chip-label">Current</div>
+          <div class="metric-chip-val" id="chip-current">—</div>
+        </div>
+        <div class="metric-chip">
+          <div class="metric-chip-label">Temperature</div>
+          <div class="metric-chip-val" id="chip-temp">—</div>
+        </div>
+        <div class="metric-chip">
+          <div class="metric-chip-label">Vibration</div>
+          <div class="metric-chip-val" id="chip-vib">—</div>
+        </div>
+        <div class="metric-chip">
+          <div class="metric-chip-label">Health Index</div>
+          <div class="metric-chip-val" id="chip-health">—</div>
+        </div>
+      </div>
+
+      <!-- Alert card -->
+      <div class="alert-card healthy" id="alert-card-panel">
+        <div class="alert-header">
+          <div class="alert-title">Loading…</div>
+        </div>
+      </div>
+
+      <!-- RUL banner -->
+      <div class="rul-banner" id="rul-banner">
+        <div class="rul-icon"></div>
+        <div class="rul-text">Loading…</div>
+      </div>
+
+      <!-- Charts row 1: power + temp -->
+      <div class="chart-grid-2">
+        <div class="card">
+          <div class="card-body" style="padding:14px 16px 10px">
+            <div class="chart-wrap" style="height:220px">
+              <canvas id="chart-power"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body" style="padding:14px 16px 10px">
+            <div class="chart-wrap" style="height:220px">
+              <canvas id="chart-temp"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart row 2: vibration (full width) -->
+      <div class="chart-grid-full">
+        <div class="card">
+          <div class="card-body" style="padding:14px 16px 10px">
+            <div class="chart-wrap" style="height:220px">
+              <canvas id="chart-vib"></canvas>
+            </div>
+          </div>
+          <div class="iso-legend">
+            <div class="iso-legend-item">
+              <div class="iso-dot" style="background:rgba(22,163,74,.5)"></div> Zone A – Good
+            </div>
+            <div class="iso-legend-item">
+              <div class="iso-dot" style="background:rgba(217,119,6,.5)"></div> Zone B – Acceptable
+            </div>
+            <div class="iso-legend-item">
+              <div class="iso-dot" style="background:rgba(220,38,38,.5)"></div> Zone C – Alert
+            </div>
+            <div class="iso-legend-item">
+              <div class="iso-dot" style="background:rgba(127,29,29,.7)"></div> Zone D – Danger
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart row 3: health index -->
+      <div class="chart-grid-full">
+        <div class="card">
+          <div class="card-body" style="padding:14px 16px 10px">
+            <div class="chart-wrap" style="height:200px">
+              <canvas id="chart-health"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom panels: explainability + fault diagnosis + efficiency class -->
+      <div class="chart-grid-2" style="margin-top:16px">
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-title-icon"></div>
+              Anomaly Sensor Contributions
+            </div>
+          </div>
+          <div class="card-body" style="padding:14px 16px 10px">
+            <div class="chart-wrap" style="height:180px">
+              <canvas id="chart-contrib"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-title-icon"></div>
+              Fault Diagnosis
+              <span class="section-tag tag-sim" style="margin-left:6px">Signature-based · Simulated</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <ul class="fault-list" id="fault-diag-list">
+              <li style="padding:10px 0;color:var(--text3);font-size:.82rem">Loading…</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Efficiency class -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-title-icon"></div>
+            Estimated Efficiency Class
+            <span class="section-tag tag-bee" style="margin-left:6px">IS 12615 · IEC 60034-30-1 · Illustrative</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="eff-class-panel">Loading…</div>
+          <p style="font-size:.73rem;color:var(--text3);margin-top:10px">
+            These are estimates from simulated mechanical/electrical data — not official BEE star ratings.
+          </p>
+        </div>
+      </div>
+
+    </div><!-- /page-live -->
+
+
+    <!-- ============================================================
+         PAGE 2 — FLEET & ACTION QUEUE
+         ============================================================ -->
+    <div class="page" id="page-fleet">
+
+      <div class="page-header">
+        <div class="page-title">Fleet &amp; Action Queue</div>
+        <div class="page-sub">All three motors · Risk ranking · ₹ downtime avoided · Scope 2</div>
+      </div>
+
+      <!-- Fleet KPI strip -->
+      <div class="kpi-grid">
+        <div class="kpi-card red">
+          <div class="kpi-icon"></div>
+          <div class="kpi-label">Fix Now</div>
+          <div class="kpi-value" id="fleet-fix-count">—</div>
+          <div class="kpi-delta down">Assets need immediate action</div>
+        </div>
+        <div class="kpi-card amber">
+          <div class="kpi-icon"></div>
+          <div class="kpi-label">Monitor</div>
+          <div class="kpi-value" id="fleet-mon-count">—</div>
+          <div class="kpi-delta warn">Assets to watch</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="kpi-label">Can Wait</div>
+          <div class="kpi-value" id="fleet-wait-count">—</div>
+          <div class="kpi-delta up">Assets healthy</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-icon"></div>
+          <div class="kpi-label">₹ Downtime Avoided</div>
+          <div class="kpi-value" id="fleet-avoided">—</div>
+          <div class="kpi-delta up">Estimated total</div>
+        </div>
+      </div>
+
+      <!-- Fleet action table -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-title-icon"></div>
+            Fleet Action Queue
+          </div>
+        </div>
+        <div class="card-body no-pad">
+          <table class="fleet-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Health</th>
+                <th>Severity</th>
+                <th>Risk Index</th>
+                <th>Action Tier</th>
+                <th>RUL</th>
+                <th>₹ Avoided</th>
+              </tr>
+            </thead>
+            <tbody id="fleet-tbody">
+              <tr><td colspan="7" style="color:var(--text3);font-size:.82rem;padding:16px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Fleet charts row -->
+      <div class="chart-grid-2">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon"></div> Power by Asset</div>
+          </div>
+          <div class="card-body" style="padding:14px 16px 10px">
+            <div class="chart-wrap" style="height:240px">
+              <canvas id="chart-fleet-power"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10h-10z"/></svg></div> Action Tier Breakdown</div>
+          </div>
+          <div class="card-body" style="padding:14px 16px 10px">
+            <div class="chart-wrap" style="height:240px">
+              <canvas id="chart-fleet-donut"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Efficiency class — all motors -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-title-icon"></div>
+            Estimated Efficiency Class — Fleet
+            <span class="section-tag tag-bee" style="margin-left:6px">Illustrative · IS 12615</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="eff-class-panel-fleet">Loading…</div>
+          <p style="font-size:.73rem;color:var(--text3);margin-top:10px">
+            Illustrative only — not official BEE star ratings.
+          </p>
+        </div>
+      </div>
+
+      <!-- Carbon & Financial -->
+      <div class="chart-grid-2">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/></svg></div> Scope 2 Emissions</div>
+          </div>
+          <div class="card-body">
+            <div class="carbon-grid">
+              <div class="carbon-item">
+                <div class="carbon-val" id="carbon-gross">—</div>
+                <div class="carbon-lbl">Gross CO₂/hr</div>
+              </div>
+              <div class="carbon-item">
+                <div class="carbon-val" id="carbon-net">—</div>
+                <div class="carbon-lbl">Net CO₂/hr (post-solar)</div>
+              </div>
+              <div class="carbon-item" style="grid-column:1/-1">
+                <div class="carbon-val" id="carbon-avoided" style="color:var(--green)">—</div>
+                <div class="carbon-lbl">Avoided via Solar Offset</div>
+              </div>
+            </div>
+            <p style="font-size:.73rem;color:var(--text3)">Grid factor: 0.82 kg CO₂/kWh (India avg)</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div> Financial Recovery Model</div>
+          </div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="carbon-item">
+                <div class="carbon-val" id="fin-wasted" style="font-size:1.1rem">—</div>
+                <div class="carbon-lbl">Wasted Energy / Year</div>
+              </div>
+              <div class="carbon-item">
+                <div class="carbon-val" id="fin-inr" style="font-size:1.1rem;color:var(--red)">—</div>
+                <div class="carbon-lbl">Annual ₹ Loss</div>
+              </div>
+              <div class="carbon-item">
+                <div class="carbon-val" id="fin-daily" style="font-size:1.1rem;color:var(--amber)">—</div>
+                <div class="carbon-lbl">Daily Loss</div>
+              </div>
+              <div class="carbon-item">
+                <div class="carbon-val" id="fin-payback" style="font-size:1.1rem;color:var(--green)">—</div>
+                <div class="carbon-lbl">Payback Period</div>
+              </div>
+            </div>
+            <p style="font-size:.73rem;color:var(--text3);margin-top:10px">Based on configurable sidebar assumptions</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /page-fleet -->
+
+
+    <!-- ============================================================
+         PAGE 3 — AUDIT EXPORTER
+         ============================================================ -->
+    <div class="page" id="page-audit">
+
+      <div class="page-header">
+        <div class="page-title">Audit Exporter</div>
+        <div class="page-sub">Structured energy &amp; compliance report · Download TXT or CSV</div>
+      </div>
+
+      <!-- Section overview -->
+      <div class="chart-grid-2" style="margin-bottom:16px">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div> Report Sections</div>
+          </div>
+          <div class="card-body">
+            <table class="std-table">
+              <thead><tr><th>Section</th><th>Contents</th></tr></thead>
+              <tbody>
+                <tr><td>1. Executive Summary</td><td>Fleet health, anomaly count, savings, payback</td></tr>
+                <tr><td>2. Scope &amp; Method</td><td>Simulator methodology, standards, data generation</td></tr>
+                <tr><td>3. Findings</td><td>Per-asset power, health, efficiency class, RUL</td></tr>
+                <tr><td>4. Fault Diagnosis</td><td>Ranked fault types, actions, cost bands</td></tr>
+                <tr><td>5. Recommendations</td><td>kWh/yr, ₹/yr, CO₂ offset, payback period</td></tr>
+                <tr><td>Annexures</td><td>Assumptions, standards list, simulation disclaimer</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon"></div> Downloads</div>
+          </div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--text2);margin-bottom:14px">
+              Reports reflect current sidebar settings and live simulation state.
+            </p>
+            <div class="download-row">
+              <button class="btn-download primary" id="btn-dl-txt">Audit Report (.txt)</button>
+              <button class="btn-download secondary" id="btn-dl-csv">Telemetry Log (.csv)</button>
+            </div>
+            <p style="font-size:.72rem;color:var(--text3);margin-top:14px;line-height:1.6">
+              All figures are from a physics-inspired simulator.<br>
+              Not for official audit submission. For demonstration only.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report preview -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><div class="card-title-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div> Report Preview</div>
+          <span class="section-tag tag-sim">Simulated data</span>
+        </div>
+        <div class="card-body">
+          <pre class="report-preview" id="report-preview">Loading report…</pre>
+        </div>
+      </div>
+
+      <!-- Disclaimer footer -->
+      <div style="margin-top:16px;padding:14px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-sm);font-size:.78rem;color:#991b1b;line-height:1.7">
+        <strong>SIMULATION DISCLAIMER:</strong> All sensor readings, health scores, energy figures, and financial estimates
+        are generated by a physics-inspired simulator. No real plant or machinery data has been used.
+        Efficiency class labels follow IS 12615 / IEC 60034-30-1 thresholds and are illustrative —
+        they are not official BEE star ratings. This dashboard is produced for demonstration purposes only
+        (Schneider Electric Yuva Yodha · Smart Manufacturing Track).
+      </div>
+
+    </div><!-- /page-audit -->
+
+  </main><!-- /main-content -->
+
+</div><!-- /app-shell -->
+
+<!-- Scripts (load order matters) -->
+<script src="api.js"></script>
+<script src="simulator.js"></script>
+<script src="charts.js"></script>
+<script src="dashboard.js"></script>
+
+</body>
+</html>
